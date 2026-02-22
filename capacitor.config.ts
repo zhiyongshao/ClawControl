@@ -26,8 +26,7 @@ const config: CapacitorConfig = {
       resizeOnFullScreen: true
     },
     StatusBar: {
-      style: 'DARK',
-      backgroundColor: '#06080a'
+      style: 'DARK'
     }
   },
   ios: {

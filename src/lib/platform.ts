@@ -163,13 +163,6 @@ export async function setStatusBarStyle(isDark: boolean): Promise<void> {
     await StatusBar.setStyle({
       style: isDark ? Style.Dark : Style.Light
     })
-
-    const platform = getPlatform()
-    if (platform === 'android') {
-      await StatusBar.setBackgroundColor({
-        color: isDark ? '#06080a' : '#f0f3f6'
-      })
-    }
   } catch {
     // StatusBar not available
   }
