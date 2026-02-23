@@ -86,14 +86,55 @@ export interface Skill {
   install?: SkillInstallOption[]
 }
 
+// Cron job schedule types
+export type CronScheduleType =
+  | { kind: 'at'; at: string }
+  | { kind: 'every'; everyMs: number; anchorMs?: number }
+  | { kind: 'cron'; expr: string; tz?: string; staggerMs?: number }
+
+export type CronSessionTarget = 'main' | 'isolated'
+export type CronWakeMode = 'next-heartbeat' | 'now'
+
+// Cron payload types
+export type CronPayload =
+  | { kind: 'systemEvent'; text: string }
+  | { kind: 'agentTurn'; message: string; model?: string; thinking?: string; timeoutSeconds?: number }
+
+// Cron delivery types
+export interface CronDelivery {
+  mode: 'none' | 'announce' | 'webhook'
+  channel?: string
+  to?: string
+  bestEffort?: boolean
+}
+
+// Cron job runtime state (read-only)
+export interface CronJobState {
+  nextRunAtMs?: number
+  lastRunAtMs?: number
+  lastRunStatus?: 'ok' | 'error' | 'skipped'
+  lastError?: string
+  lastDurationMs?: number
+  consecutiveErrors?: number
+}
+
 export interface CronJob {
   id: string
   name: string
   schedule: string
+  scheduleRaw?: CronScheduleType
+  sessionTarget?: CronSessionTarget
+  wakeMode?: CronWakeMode
+  payload?: CronPayload
+  delivery?: CronDelivery
+  agentId?: string | null
+  deleteAfterRun?: boolean
   nextRun?: string
   status: 'active' | 'paused'
   description?: string
   content?: string
+  state?: CronJobState
+  enabled?: boolean
 }
 
 export interface RequestFrame {
