@@ -21,6 +21,7 @@ import { AgentDashboard } from './components/AgentDashboard'
 import { MobileGestureLayer } from './components/MobileGestureLayer'
 import {
   isNativeMobile,
+  getPlatform,
   setStatusBarStyle,
   setupKeyboardListeners,
   setupAppListeners,
@@ -58,19 +59,31 @@ function App() {
     // Hide splash screen now that the app has rendered
     SplashScreen.hide()
 
-    // Add mobile body class for CSS targeting
+    // Add mobile classes for CSS targeting
+    document.documentElement.classList.add('capacitor-mobile-html')
     document.body.classList.add('capacitor-mobile')
+    if (getPlatform() === 'android') {
+      document.body.classList.add('platform-android')
+    }
 
-    // Keyboard handling — set a CSS variable with the keyboard height so the
-    // layout can shrink to keep the input area visible above the keyboard.
-    const cleanupKeyboard = setupKeyboardListeners(
+    // Keyboard handling.
+    // On Android, the native MainActivity handles keyboard resizing by setting
+    // the WebView container's bottom margin, so 100dvh adapts automatically.
+    // On iOS, we use JS keyboard listeners to adjust layout manually.
+    const isAndroid = getPlatform() === 'android'
+    const cleanupKeyboard = isAndroid ? (() => {}) : setupKeyboardListeners(
       (height) => {
+        const fullHeight = window.innerHeight
         document.body.classList.add('keyboard-visible')
         document.documentElement.style.setProperty('--keyboard-height', `${height}px`)
+        document.documentElement.style.setProperty('--app-height', `${fullHeight - height}px`)
+        window.scrollTo(0, 0)
       },
       () => {
         document.body.classList.remove('keyboard-visible')
         document.documentElement.style.setProperty('--keyboard-height', '0px')
+        document.documentElement.style.setProperty('--app-height', '')
+        window.scrollTo(0, 0)
       }
     )
 
@@ -100,6 +113,7 @@ function App() {
       cleanupKeyboard()
       cleanupApp()
       cleanupBack()
+      document.documentElement.classList.remove('capacitor-mobile-html')
       document.body.classList.remove('capacitor-mobile')
     }
   }, [])

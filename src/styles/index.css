@@ -4514,37 +4514,43 @@ a {
 /* ===== Mobile App (Capacitor) ===== */
 
 /* Safe area insets for iOS notch/dynamic island and Android cutouts.
-   Applied to individual edge elements rather than .app to prevent layout shift. */
+   Applied to individual edge elements rather than .app to prevent layout shift.
+
+   On iOS, the browser provides env(safe-area-inset-*) natively.
+   On Android 15+ with edge-to-edge enforced, env() returns 0 but Capacitor's
+   SystemBars plugin injects --safe-area-inset-* as CSS custom properties.
+   We use var(--safe-area-inset-*, env(safe-area-inset-*, 0px)) to pick up
+   whichever source provides the correct value. */
 
 /* On native mobile, apply safe area insets to the actual edge elements */
 body.capacitor-mobile .top-bar {
-  height: calc(var(--top-bar-height) + env(safe-area-inset-top));
-  padding-top: env(safe-area-inset-top);
+  height: calc(var(--top-bar-height) + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
   -webkit-app-region: unset;
 }
 
 body.capacitor-mobile .sidebar-header {
-  padding-top: calc(var(--space-md) + env(safe-area-inset-top));
-  min-height: calc(var(--top-bar-height) + env(safe-area-inset-top));
+  padding-top: calc(var(--space-md) + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  min-height: calc(var(--top-bar-height) + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
   -webkit-app-region: unset;
 }
 
 body.capacitor-mobile .panel-header {
-  padding-top: calc(var(--space-md) + env(safe-area-inset-top));
-  min-height: calc(var(--top-bar-height) + env(safe-area-inset-top));
+  padding-top: calc(var(--space-md) + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  min-height: calc(var(--top-bar-height) + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
 }
 
 body.capacitor-mobile .input-area {
-  padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--space-md) + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
 body.capacitor-mobile .sidebar {
-  padding-left: env(safe-area-inset-left);
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
 }
 
 body.capacitor-mobile .main-content {
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
 }
 
 /* Larger touch targets for mobile */
@@ -4606,9 +4612,13 @@ body.capacitor-mobile .input-container textarea {
 }
 
 /* Mobile keyboard handling — shrink the app to fit above the keyboard and
-   remove the extra bottom safe area (the keyboard covers the home indicator). */
+   remove the extra bottom safe area (the keyboard covers the home indicator).
+   Use --app-height (set from JS using window.innerHeight) instead of
+   calc(100dvh - keyboard) because 100dvh changes dynamically on Android
+   when the keyboard appears, causing a double-subtraction. */
 body.capacitor-mobile.keyboard-visible .app {
-  height: calc(100dvh - var(--keyboard-height, 0px));
+  height: var(--app-height, calc(100dvh - var(--keyboard-height, 0px)));
+  overflow: hidden;
 }
 
 body.capacitor-mobile.keyboard-visible .input-area {
@@ -4704,12 +4714,22 @@ body.capacitor-mobile .overlay {
   display: block !important;
 }
 
-/* Pull-to-refresh prevention and viewport stability */
+/* Pull-to-refresh prevention and viewport stability.
+   position:fixed on body prevents the browser from auto-scrolling the
+   viewport when focusing an input (which causes the keyboard jump). */
+html.capacitor-mobile-html {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body.capacitor-mobile {
-  overscroll-behavior-y: contain;
+  overscroll-behavior: none;
   position: fixed;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 /* Smooth scrolling on iOS */
@@ -4778,8 +4798,8 @@ body.capacitor-mobile .edit-btn {
 
 /* Mobile modal: fit within safe areas, scrollable */
 body.capacitor-mobile .modal {
-  max-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px);
-  max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px);
+  max-height: calc(100vh - var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) - var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) - 32px);
+  max-height: calc(100dvh - var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) - var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) - 32px);
   display: flex;
   flex-direction: column;
 }
@@ -4794,7 +4814,7 @@ body.capacitor-mobile .modal-body {
 /* Mobile detail views: bottom safe area for scrollable content */
 body.capacitor-mobile .detail-content {
   padding: var(--space-sm);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 
 /* Mobile server settings: reduce padding, expand to full width */

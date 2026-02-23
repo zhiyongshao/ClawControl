@@ -15,26 +15,25 @@ export function CertErrorModal() {
   if (!showCertError || !certErrorUrl) return null
 
   const platform = getPlatform()
-  const isIOS = platform === 'ios'
+  const isMobileNative = platform === 'ios' || platform === 'android'
 
   const handleTrustCert = async () => {
     try {
       const url = new URL(certErrorUrl)
-      const hostname = url.hostname
 
       if (platform === 'electron') {
-        const result = await trustHost(hostname)
+        const result = await trustHost(url.hostname)
         if (result.trusted) {
           hideCertErrorModal()
           await connect()
         }
-      } else if (isIOS) {
-        // On iOS, clear stored fingerprint so TOFU re-accepts on next connect
+      } else if (isMobileNative) {
+        // On iOS/Android, clear stored fingerprint so TOFU re-accepts on next connect
         await clearTLSFingerprint(url.host)
         hideCertErrorModal()
         await connect()
       } else {
-        // On Android/web, open the URL in browser so the user can accept the cert
+        // On web, open the URL in browser so the user can accept the cert
         await openExternal(certErrorUrl)
       }
     } catch {
@@ -42,11 +41,11 @@ export function CertErrorModal() {
     }
   }
 
-  const buttonLabel = isIOS
+  const buttonLabel = isMobileNative
     ? 'Accept New Certificate & Reconnect'
     : 'Trust Certificate & Connect'
 
-  const description = isIOS
+  const description = isMobileNative
     ? 'The server certificate has changed or is untrusted. Accept the new certificate to reconnect.'
     : 'The server is using a self-signed or untrusted certificate.'
 

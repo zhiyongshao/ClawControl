@@ -1367,7 +1367,7 @@ export const useStore = create<AppState>()(
             }
           }
 
-          // On iOS, use the native WebSocket plugin for TLS certificate handling
+          // On iOS/Android, use the native WebSocket plugin for TLS certificate handling (TOFU)
           let wsFactory: ((url: string) => any) | undefined
           try {
             const host = new URL(serverUrl).host

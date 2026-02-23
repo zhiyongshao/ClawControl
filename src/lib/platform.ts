@@ -11,7 +11,7 @@ import { LocalNotifications } from '@capacitor/local-notifications'
 import { Haptics, ImpactStyle } from '@capacitor/haptics'
 
 // NOTE: iOS WKWebView doesn't provide CommonJS `require`, so this must be an ESM import.
-// We still gate usage to iOS in createWebSocketFactory().
+// Used on both iOS and Android via createWebSocketFactory().
 import { NativeWebSocketWrapper } from './native-websocket'
 
 export type PlatformType = 'electron' | 'ios' | 'android' | 'web'
@@ -113,23 +113,23 @@ export interface TLSFactoryOptions {
 }
 
 /**
- * Returns a WebSocket factory that uses the native plugin on iOS (for TLS cert handling),
- * or undefined on all other platforms (client falls back to browser WebSocket).
+ * Returns a WebSocket factory that uses the native plugin on iOS and Android
+ * (for TLS cert handling with TOFU support), or undefined on other platforms
+ * (client falls back to browser WebSocket).
  */
 export function createWebSocketFactory(tlsOptions?: TLSFactoryOptions): ((url: string) => any) | undefined {
   const platform = getPlatform()
-  if (platform !== 'ios') return undefined
+  if (platform !== 'ios' && platform !== 'android') return undefined
 
-  // Gate usage to iOS (other platforms fall back to browser WebSocket).
   return (url: string) => {
     return new NativeWebSocketWrapper(url, tlsOptions)
   }
 }
 
-/** Clear a stored TLS fingerprint (iOS only). */
+/** Clear a stored TLS fingerprint (iOS and Android). */
 export async function clearTLSFingerprint(storeKey: string): Promise<void> {
   const platform = getPlatform()
-  if (platform !== 'ios') return
+  if (platform !== 'ios' && platform !== 'android') return
 
   try {
     const { NativeWebSocket } = await import('capacitor-native-websocket')
