@@ -128,6 +128,8 @@ interface AppState {
   compactingSession: string | null
   thinkingEnabled: boolean
   setThinkingEnabled: (enabled: boolean) => void
+  draftMessage: string
+  setDraftMessage: (message: string) => void
 
   // Notifications & Unread
   notificationsEnabled: boolean
@@ -608,6 +610,8 @@ export const useStore = create<AppState>()(
       compactingSession: null,
       thinkingEnabled: false,
       setThinkingEnabled: (enabled) => set({ thinkingEnabled: enabled }),
+      draftMessage: '',
+      setDraftMessage: (message) => set({ draftMessage: message }),
 
       // Notifications & Unread
       notificationsEnabled: false,

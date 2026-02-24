@@ -14,7 +14,7 @@ import logoUrl from '../../build/icon.png'
 marked.setOptions({ breaks: true, gfm: true, async: false })
 
 export function ChatArea() {
-  const { messages: allMessages, agents, currentAgentId, sessions, currentSessionId, activeSubagents, openSubagentPopout, openToolCallPopout } = useStore()
+  const { messages: allMessages, agents, currentAgentId, sessions, currentSessionId, activeSubagents, openSubagentPopout, openToolCallPopout, setDraftMessage } = useStore()
   const isStreaming = useStore(selectIsStreaming)
   const hadStreamChunks = useStore(selectHadStreamChunks)
   const activeToolCalls = useStore(selectActiveToolCalls)
@@ -87,13 +87,13 @@ export function ChatArea() {
           <h2>Start a Conversation</h2>
           <p>Send a message to begin chatting with {currentAgent?.name || 'the AI assistant'}</p>
           <div className="quick-actions">
-            <button className="quick-action">
+            <button className="quick-action" onClick={() => setDraftMessage('Explain the concept of ')}>
               <span>Explain a concept</span>
             </button>
-            <button className="quick-action">
+            <button className="quick-action" onClick={() => setDraftMessage('Help me write code that ')}>
               <span>Help me code</span>
             </button>
-            <button className="quick-action">
+            <button className="quick-action" onClick={() => setDraftMessage('Analyze the following data: ')}>
               <span>Analyze data</span>
             </button>
           </div>

@@ -86,7 +86,7 @@ export function InputArea() {
   const isListeningRef = useRef(false)
   const clientRef = useRef<any>(null)
 
-  const { sendMessage, abortChat, connected, client } = useStore()
+  const { sendMessage, abortChat, connected, client, draftMessage, setDraftMessage } = useStore()
   const isStreaming = useStore(selectIsStreaming)
 
   const maxLength = 4000
@@ -454,6 +454,14 @@ export function InputArea() {
       void stopWakeRecognition()
     }
   }, [wakeEnabled, wakeTriggers, voiceSupported, connected, isStreaming, isListening])
+
+  useEffect(() => {
+    if (draftMessage) {
+      setMessage(draftMessage)
+      setDraftMessage('')
+      textareaRef.current?.focus()
+    }
+  }, [draftMessage])
 
   useEffect(() => {
     // Auto-resize textarea
