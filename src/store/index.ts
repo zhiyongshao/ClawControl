@@ -52,11 +52,13 @@ interface AppState {
   setAuthMode: (mode: 'token' | 'password') => void
   gatewayToken: string
   setGatewayToken: (token: string) => void
-  insecureAuth: boolean
-  setInsecureAuth: (insecure: boolean) => void
   connected: boolean
   connecting: boolean
+  connectionError: string | null
+  setConnectionError: (error: string | null) => void
   client: OpenClawClient | null
+  deviceName: string
+  setDeviceName: (name: string) => void
 
   // Device Identity & Pairing
   pairingStatus: 'none' | 'pending'
@@ -142,6 +144,11 @@ interface AppState {
   deleteSession: (sessionId: string) => void
   updateSessionLabel: (sessionId: string, label: string) => Promise<void>
   spawnSubagentSession: (agentId: string, prompt?: string) => Promise<void>
+
+  // Pinned sessions (local-only)
+  pinnedSessionKeys: string[]
+  togglePinSession: (sessionKey: string) => void
+  isSessionPinned: (sessionKey: string) => boolean
 
   // Agents
   agents: Agent[]
@@ -279,11 +286,13 @@ export const useStore = create<AppState>()(
         set({ gatewayToken: token })
         Platform.saveToken(token).catch(() => { })
       },
-      insecureAuth: false,
-      setInsecureAuth: (insecure) => set({ insecureAuth: insecure }),
       connected: false,
       connecting: false,
+      connectionError: null,
+      setConnectionError: (error) => set({ connectionError: error }),
       client: null,
+      deviceName: '',
+      setDeviceName: (name) => set({ deviceName: name }),
 
       // Device Identity & Pairing
       pairingStatus: 'none',
@@ -722,6 +731,15 @@ export const useStore = create<AppState>()(
       // Sessions
       sessions: [],
       currentSessionId: null,
+
+      // Pinned sessions (local-only)
+      pinnedSessionKeys: [],
+      isSessionPinned: (sessionKey) => get().pinnedSessionKeys.includes(sessionKey),
+      togglePinSession: (sessionKey) => set((state) => ({
+        pinnedSessionKeys: state.pinnedSessionKeys.includes(sessionKey)
+          ? state.pinnedSessionKeys.filter(k => k !== sessionKey)
+          : [sessionKey, ...state.pinnedSessionKeys]
+      })),
       setCurrentSession: (sessionId) => {
         const { unreadCounts, client, currentSessionId: prevSessionId, messages: currentMessages, sessions } = get()
         const { [sessionId]: _, ...restCounts } = unreadCounts
@@ -791,6 +809,7 @@ export const useStore = create<AppState>()(
           return {
             sessions: state.sessions.filter((s) => (s.key || s.id) !== sessionId),
             currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
+            pinnedSessionKeys: state.pinnedSessionKeys.filter(k => k !== sessionId),
             streamingSessions: restStreaming,
             sessionHadChunks: restChunks,
             sessionToolCalls: restToolCalls,
@@ -1343,27 +1362,26 @@ export const useStore = create<AppState>()(
         }
 
         try {
-          const { authMode, insecureAuth } = get()
+          const { authMode } = get()
 
-          // Load or create device identity for Ed25519 challenge signing
+          // Load or create device identity for Ed25519 challenge signing.
+          // ClawControl no longer supports the insecure-auth bypass; always attempt pairing.
           let deviceIdentity: DeviceIdentity | null = null
-          if (!insecureAuth) {
-            try {
-              deviceIdentity = await getOrCreateDeviceIdentity()
-            } catch {
-              // Ed25519 unavailable — connect without device identity
-            }
+          try {
+            deviceIdentity = await getOrCreateDeviceIdentity()
+          } catch {
+            // Ed25519 unavailable — connect without device identity
+          }
 
-            // Check for a stored device token for this server
-            if (serverHost) {
-              try {
-                const storedDeviceToken = await getDeviceToken(serverHost)
-                if (storedDeviceToken) {
-                  effectiveToken = storedDeviceToken
-                }
-              } catch {
-                // Storage read failed
+          // Check for a stored device token for this server.
+          if (serverHost) {
+            try {
+              const storedDeviceToken = await getDeviceToken(serverHost)
+              if (storedDeviceToken) {
+                effectiveToken = storedDeviceToken
               }
+            } catch {
+              // Storage read failed
             }
           }
 
@@ -1375,11 +1393,13 @@ export const useStore = create<AppState>()(
               required: false,
               allowTOFU: true,
               storeKey: host,
+              origin: 'capacitor://localhost',
             })
           } catch {
             // URL parsing failed, proceed without factory
           }
-          const client = new OpenClawClient(serverUrl, effectiveToken, authMode, wsFactory, deviceIdentity)
+          const { deviceName } = get()
+          const client = new OpenClawClient(serverUrl, effectiveToken, authMode, wsFactory, deviceIdentity, deviceName || undefined)
 
           // Set up event handlers
           client.on('message', (msgArg: unknown) => {
@@ -1492,7 +1512,7 @@ export const useStore = create<AppState>()(
           })
 
           client.on('connected', (payload: unknown) => {
-            set({ connected: true, connecting: false, pairingStatus: 'none', pairingDeviceId: null })
+            set({ connected: true, connecting: false, connectionError: null, pairingStatus: 'none', pairingDeviceId: null })
 
             // Extract and store device token from hello-ok response
             if (serverHost && payload && typeof payload === 'object') {
@@ -1869,7 +1889,8 @@ export const useStore = create<AppState>()(
             return get().connect()
           }
 
-          set({ connecting: false, connected: false })
+          const connectionError = err instanceof Error ? err.message : 'Connection failed'
+          set({ connecting: false, connected: false, connectionError })
           throw err
         }
       },
@@ -2057,7 +2078,8 @@ export const useStore = create<AppState>()(
         theme: state.theme,
         serverUrl: state.serverUrl,
         authMode: state.authMode,
-        insecureAuth: state.insecureAuth,
+        deviceName: state.deviceName,
+        pinnedSessionKeys: state.pinnedSessionKeys,
         sidebarCollapsed: state.sidebarCollapsed,
         collapsedSessionGroups: state.collapsedSessionGroups,
         thinkingEnabled: state.thinkingEnabled,

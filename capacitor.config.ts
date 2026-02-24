@@ -5,12 +5,11 @@ const config: CapacitorConfig = {
   appName: 'ClawControl',
   webDir: 'dist',
   server: {
-    // Allow connections to any WebSocket server
-    allowNavigation: ['*'],
-    // Use http:// instead of capacitor:// so WebSocket origin headers
-    // are a standard scheme that servers accept without patching
-    iosScheme: 'http',
-    androidScheme: 'http'
+    // Use https:// origin instead of capacitor:// to avoid CORS/mixed-content issues
+    hostname: 'localhost',
+    iosScheme: 'https',
+    androidScheme: 'https',
+    allowNavigation: ['*']
   },
   plugins: {
     SplashScreen: {

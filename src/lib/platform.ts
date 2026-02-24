@@ -4,6 +4,7 @@
 import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 import { Browser } from '@capacitor/browser'
+import { AppLauncher } from '@capacitor/app-launcher'
 import { StatusBar, Style } from '@capacitor/status-bar'
 import { Keyboard } from '@capacitor/keyboard'
 import { App } from '@capacitor/app'
@@ -88,11 +89,24 @@ export async function openExternal(url: string): Promise<void> {
   }
 
   if (isNativeMobile()) {
-    await Browser.open({ url })
+    // Prefer the OS handler (default browser, phone app, mail app) over an in-app webview.
+    // AppLauncher.openUrl uses the system URL handler.
+    try {
+      await AppLauncher.openUrl({ url })
+    } catch {
+      // Fallback: Capacitor Browser plugin (SFSafariViewController / Custom Tabs)
+      await Browser.open({ url })
+    }
     return
   }
 
-  window.open(url, '_blank')
+  // Web fallback
+  if (/^(mailto:|tel:)/i.test(url)) {
+    window.location.href = url
+    return
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 // Certificate trust (only available on Electron)
@@ -110,6 +124,7 @@ export interface TLSFactoryOptions {
   expectedFingerprint?: string
   allowTOFU?: boolean
   storeKey?: string
+  origin?: string
 }
 
 /**

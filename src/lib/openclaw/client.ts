@@ -7,6 +7,8 @@ import type {
 } from './types'
 import type { DeviceIdentity, DeviceConnectField } from '../device-identity'
 import { signChallenge } from '../device-identity'
+import { APP_NAME, APP_VERSION, OPENCLAW_CLIENT_ID, OPENCLAW_CLIENT_MODE } from '../appMeta'
+import { getPlatform } from '../platform'
 import { stripAnsi, extractToolResultText, extractTextFromContent, extractImagesFromContent, isHeartbeatContent, isNoiseContent, stripSystemNotifications, parseMediaTokens } from './utils'
 import * as sessionsApi from './sessions'
 import * as chatApi from './chat'
@@ -51,6 +53,7 @@ export class OpenClawClient {
   private maxReconnectAttempts = 10
   private authenticated = false
   private deviceIdentity: DeviceIdentity | null = null
+  private deviceName: string | null = null
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null
   private static HEALTH_CHECK_INTERVAL = 15000 // 15s
   private static HEALTH_CHECK_TIMEOUT = 10000  // 10s
@@ -70,12 +73,13 @@ export class OpenClawClient {
   // Guards against emitting duplicate streamSessionKey events per send cycle.
   private sessionKeyResolved = false
 
-  constructor(url: string, token: string = '', authMode: 'token' | 'password' = 'token', wsFactory?: WebSocketFactory, deviceIdentity?: DeviceIdentity | null) {
+  constructor(url: string, token: string = '', authMode: 'token' | 'password' = 'token', wsFactory?: WebSocketFactory, deviceIdentity?: DeviceIdentity | null, deviceName?: string) {
     this.url = url
     this.token = token
     this.authMode = authMode
     this.wsFactory = wsFactory || null
     this.deviceIdentity = deviceIdentity || null
+    this.deviceName = deviceName || null
   }
 
   // Event handling
@@ -313,11 +317,11 @@ export class OpenClawClient {
         role: 'operator',
         scopes,
         client: {
-          id: 'gateway-client',
-          displayName: 'ClawControl',
-          version: '1.0.0',
-          platform: 'web',
-          mode: 'ui'
+          id: OPENCLAW_CLIENT_ID,
+          displayName: this.deviceName || APP_NAME,
+          version: APP_VERSION,
+          platform: getPlatform(),
+          mode: OPENCLAW_CLIENT_MODE
         },
         caps: ['tool-events', 'thinking-events'],
         auth: this.token

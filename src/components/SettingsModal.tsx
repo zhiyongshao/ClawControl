@@ -17,8 +17,6 @@ export function SettingsModal() {
     disconnect,
     connected,
     connecting,
-    insecureAuth,
-    setInsecureAuth,
     notificationsEnabled,
     setNotificationsEnabled,
     openServerSettings,
@@ -26,13 +24,16 @@ export function SettingsModal() {
     toggleTheme,
     pairingStatus,
     pairingDeviceId,
-    retryConnect
+    retryConnect,
+    connectionError,
+    deviceName,
+    setDeviceName
   } = useStore()
 
   const [url, setUrl] = useState(serverUrl)
   const [mode, setMode] = useState(authMode)
   const [token, setToken] = useState(gatewayToken)
-  const [insecure, setInsecure] = useState(insecureAuth)
+  const [name, setName] = useState(deviceName)
   const [error, setError] = useState('')
   const [showToken, setShowToken] = useState(false)
   const [connectionExpanded, setConnectionExpanded] = useState(!connected)
@@ -45,9 +46,9 @@ export function SettingsModal() {
     setUrl(serverUrl)
     setMode(authMode)
     setToken(gatewayToken)
-    setInsecure(insecureAuth)
+    setName(deviceName)
     setConnectionExpanded(!connected)
-  }, [serverUrl, authMode, gatewayToken, insecureAuth, showSettings, connected])
+  }, [serverUrl, authMode, gatewayToken, deviceName, showSettings, connected])
 
   // Reset connect phase when modal opens or connection succeeds
   useEffect(() => {
@@ -180,7 +181,7 @@ export function SettingsModal() {
     setServerUrl(trimmedUrl)
     setAuthMode(mode)
     setGatewayToken(trimmedToken)
-    setInsecureAuth(insecure)
+    setDeviceName(name.trim())
 
     // Clear stored device token so the fresh gateway token is used immediately
     try {
@@ -204,8 +205,9 @@ export function SettingsModal() {
       setConnectPhase('idle')
       setShowSettings(false)
       return
-    } catch {
+    } catch (err) {
       // First attempt failed — retry once
+      setError(err instanceof Error ? err.message : 'Connection failed')
     }
 
     setConnectPhase('retrying')
@@ -217,11 +219,12 @@ export function SettingsModal() {
         startAutoRetry()
         return  // Keep modal open
       }
+      setError('')
       setConnectPhase('idle')
       setShowSettings(false)
       return
-    } catch {
-      // Retry also failed
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Connection failed')
     }
 
     // Start auto-retry cycle
@@ -240,6 +243,23 @@ export function SettingsModal() {
   }
 
   if (!showSettings) return null
+
+  const originHelpBlock = (
+    <div style={{ marginTop: '8px', fontSize: '12px', lineHeight: '1.5' }}>
+      Your ClawControl origin must be allowed on the server. Run this on your OpenClaw host:
+      <code style={{ display: 'block', padding: '8px', background: 'var(--bg-primary)', borderRadius: '6px', marginTop: '6px', fontSize: '11px', wordBreak: 'break-all' }}>
+        {`openclaw config set gateway.controlUi.allowedOrigins '["${window.location.origin}"]'`}
+      </code>
+      <span style={{ display: 'block', marginTop: '4px' }}>Then restart the gateway for the change to take effect.</span>
+      <a
+        href="#"
+        onClick={(e) => { e.preventDefault(); openExternal('https://docs.openclaw.ai/web/control-ui') }}
+        style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+      >
+        Learn more
+      </a>
+    </div>
+  )
 
   return (
     <div className="modal-overlay" onClick={() => setShowSettings(false)}>
@@ -290,6 +310,19 @@ export function SettingsModal() {
                   autoComplete="off"
                 />
                 <span className="form-hint">WebSocket URL (e.g., wss://your-server.local or ws://localhost:8080)</span>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="deviceName">Device Name</label>
+                <input
+                  type="text"
+                  id="deviceName"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Jake's MacBook"
+                  autoComplete="off"
+                />
+                <span className="form-hint">Optional — identifies this device in the OpenClaw devices list. Defaults to &quot;ClawControl&quot;.</span>
               </div>
 
               <div className="form-group">
@@ -351,28 +384,10 @@ export function SettingsModal() {
                 <span className="form-hint">Required if authentication is enabled on the server.</span>
               </div>
 
-              <div className="form-group">
-                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    Insecure auth
-                    <span
-                      className="info-tooltip"
-                      data-tip="Skip device identity handshake and send only the gateway token. Only enable this if your server has allowInsecureAuth: true."
-                    >?</span>
-                  </span>
-                  <label className="toggle-switch" style={{ marginLeft: '8px' }}>
-                    <input
-                      type="checkbox"
-                      checked={insecure}
-                      onChange={(e) => setInsecure(e.target.checked)}
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </label>
-                <span className="form-hint">Send only the gateway token with no device identity</span>
-              </div>
-
-              {error && <div className="form-error">{error}</div>}
+              {error && <div className="form-error">{error}{error.toLowerCase().includes('origin not allowed') && originHelpBlock}</div>}
+              {!error && !connected && connectionError && (
+                <div className="form-error">{connectionError}{connectionError.toLowerCase().includes('origin not allowed') && originHelpBlock}</div>
+              )}
             </>
           )}
 

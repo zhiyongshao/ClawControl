@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { openExternal } from '../lib/platform'
 import { useStore } from '../store'
 import type { CronScheduleType, CronPayload, CronDelivery, CronSessionTarget, CronWakeMode } from '../lib/openclaw/types'
 
@@ -913,7 +914,28 @@ export function CronJobDetailView() {
             </div>
             {selectedCronJob.content ? (
               <div className="markdown-content">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({ href, children, ...props }) => {
+                      const url = href || ''
+                      const isExternal = /^(https?:\/\/|mailto:|tel:)/i.test(url)
+                      return (
+                        <a
+                          {...props}
+                          href={href}
+                          onClick={(e) => {
+                            if (!isExternal) return
+                            e.preventDefault()
+                            void openExternal(url)
+                          }}
+                        >
+                          {children}
+                        </a>
+                      )
+                    }
+                  }}
+                >
                   {selectedCronJob.content}
                 </ReactMarkdown>
               </div>
