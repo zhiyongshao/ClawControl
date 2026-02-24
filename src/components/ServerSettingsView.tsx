@@ -712,7 +712,8 @@ function FeaturesTab() {
 
   const toggleWake = async (enabled: boolean) => {
     if (!client) return
-    await client.setVoicewake({ enabled, sensitivity: wakeStatus?.sensitivity })
+    const triggers = wakeStatus?.triggers ?? ['openclaw', 'claude', 'computer']
+    await client.setVoicewake({ enabled, triggers, sensitivity: wakeStatus?.sensitivity })
     setWakeStatus((prev: any) => ({ ...prev, enabled }))
   }
 
@@ -722,30 +723,37 @@ function FeaturesTab() {
         <h3>Text-to-Speech (TTS)</h3>
         <p className="setting-description">Enable or disable TTS functionality for voice interactions.</p>
 
-        <div className="setting-row">
-          <label className="checkbox-label">
+        <div className="settings-row">
+          <div className="settings-row-label">
+            <span className="settings-label">Enable TTS</span>
+          </div>
+          <label className="toggle-switch">
             <input
               type="checkbox"
               checked={!!ttsStatus?.enabled}
               onChange={(e) => toggleTts(e.target.checked)}
             />
-            <span>Enable TTS</span>
+            <span className="toggle-slider" />
           </label>
         </div>
       </div>
 
       <div className="settings-section">
         <h3>Voice Wake</h3>
-        <p className="setting-description">Listen for wake words ('Hey Claw') continuously.</p>
+        <p className="setting-description">Listen for wake words continuously.</p>
 
-        <div className="setting-row">
-          <label className="checkbox-label">
+        <div className="settings-row">
+          <div className="settings-row-label">
+            <span className="settings-label">Enable Voice Wake</span>
+            <span className="settings-hint">Triggers: {(wakeStatus?.triggers ?? ['openclaw', 'claude', 'computer']).join(', ')}</span>
+          </div>
+          <label className="toggle-switch">
             <input
               type="checkbox"
               checked={!!wakeStatus?.enabled}
               onChange={(e) => toggleWake(e.target.checked)}
             />
-            <span>Enable Voice Wake</span>
+            <span className="toggle-slider" />
           </label>
         </div>
       </div>

@@ -69,6 +69,8 @@ export function InputArea() {
   const [wakeEnabled, setWakeEnabled] = useState(false)
   const [wakeTriggers, setWakeTriggers] = useState<string[]>(DEFAULT_WAKE_TRIGGERS)
   const [attachedImages, setAttachedImages] = useState<PendingImageAttachment[]>([])
+  const nativeSpeechAvailableRef = useRef(false)
+  const electronSpeechAvailableRef = useRef(false)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -88,6 +90,8 @@ export function InputArea() {
 
   const { sendMessage, abortChat, connected, client, draftMessage, setDraftMessage } = useStore()
   const isStreaming = useStore(selectIsStreaming)
+  const platform = getPlatform()
+  const hideMediaButtons = platform === 'ios'
 
   const maxLength = 4000
 
@@ -205,7 +209,7 @@ export function InputArea() {
     wakeCooldownUntilRef.current = Date.now() + WAKE_COOLDOWN_MS
     await stopWakeRecognition()
     try {
-      if (isNativeMobile()) {
+      if (nativeSpeechAvailableRef.current) {
         await startNativeDictation()
       } else {
         startBrowserDictation()
@@ -312,7 +316,7 @@ export function InputArea() {
       return
     }
     try {
-      if (isNativeMobile()) {
+      if (nativeSpeechAvailableRef.current) {
         await startNativeWakeRecognition()
       } else {
         startBrowserWakeRecognition()
@@ -350,8 +354,18 @@ export function InputArea() {
       setVoiceError(null)
     }
 
-    recognition.onerror = () => {
-      setVoiceError('Voice input failed. Please try again.')
+    recognition.onerror = (event: any) => {
+      const code = event?.error || 'unknown'
+      console.warn('Speech recognition error:', code)
+      const messages: Record<string, string> = {
+        'not-allowed': 'Microphone access was denied. Please allow microphone permission.',
+        'service-not-allowed': 'Speech recognition service is not available.',
+        'network': 'Network error during speech recognition.',
+        'no-speech': 'No speech was detected. Please try again.',
+        'audio-capture': 'No microphone was found. Please check your audio settings.',
+        'aborted': 'Speech recognition was aborted.',
+      }
+      setVoiceError(messages[code] || `Voice input failed (${code}). Please try again.`)
       setIsListening(false)
       dictationBrowserRecognitionRef.current = null
       void maybeStartWakeRecognition()
@@ -395,19 +409,65 @@ export function InputArea() {
     }
   }
 
+  const startElectronDictation = async () => {
+    const api = (window as any).electronAPI
+    if (!api?.speechRecognize) throw new Error('Electron speech API not available.')
+    messageBeforeDictationRef.current = message
+    setIsListening(true)
+    setVoiceError(null)
+    try {
+      const result = await api.speechRecognize(15)
+      if (result.error) {
+        throw new Error(result.error)
+      }
+      const transcript = result.text?.trim()
+      if (transcript) {
+        setMessage(joinDictatedText(messageBeforeDictationRef.current, transcript).slice(0, maxLength))
+      }
+    } finally {
+      setIsListening(false)
+      void maybeStartWakeRecognition()
+    }
+  }
+
+  const stopElectronDictation = async () => {
+    const api = (window as any).electronAPI
+    if (api?.speechStop) {
+      await api.speechStop()
+    }
+    setIsListening(false)
+  }
+
   useEffect(() => {
     let cancelled = false
 
     const detectVoiceSupport = async () => {
+      // Check Electron native speech (Windows System.Speech)
+      if (getPlatform() === 'electron' && (window as any).electronAPI?.speechAvailable) {
+        try {
+          const available = await (window as any).electronAPI.speechAvailable()
+          if (available) {
+            electronSpeechAvailableRef.current = true
+            if (!cancelled) setVoiceSupported(true)
+            return
+          }
+        } catch {
+          // Fall through
+        }
+      }
+
       if (isNativeMobile()) {
         try {
           const { available } = await SpeechRecognition.available()
-          if (!cancelled) setVoiceSupported(available)
-          return
-        } catch {
-          if (!cancelled) setVoiceSupported(false)
-          return
+          if (available) {
+            nativeSpeechAvailableRef.current = true
+            if (!cancelled) setVoiceSupported(true)
+            return
+          }
+        } catch (err) {
+          console.warn('Native speech recognition not available, trying browser fallback:', err)
         }
+        // Fall through to browser check — Android WebView often supports webkitSpeechRecognition
       }
       if (!cancelled) setVoiceSupported(Boolean(getBrowserSpeechRecognitionCtor()))
     }
@@ -499,14 +559,20 @@ export function InputArea() {
     if (!voiceSupported || isStreaming) return
 
     if (isListening) {
-      await stopDictationRecognition()
+      if (electronSpeechAvailableRef.current) {
+        await stopElectronDictation()
+      } else {
+        await stopDictationRecognition()
+      }
       await maybeStartWakeRecognition()
       return
     }
 
     try {
       await stopWakeRecognition()
-      if (isNativeMobile()) {
+      if (electronSpeechAvailableRef.current) {
+        await startElectronDictation()
+      } else if (nativeSpeechAvailableRef.current) {
         await startNativeDictation()
       } else {
         startBrowserDictation()
@@ -583,25 +649,29 @@ export function InputArea() {
         </div>
       )}
       <div className="input-container">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={handleFileSelected}
-          style={{ display: 'none' }}
-        />
-        <button
-          className="attach-btn"
-          onClick={handleAttachClick}
-          disabled={isStreaming}
-          aria-label="Attach images"
-          title="Attach images"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66L9.41 17.4a2 2 0 0 1-2.82-2.82l8.49-8.48" />
-          </svg>
-        </button>
+        {!hideMediaButtons && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFileSelected}
+            style={{ display: 'none' }}
+          />
+        )}
+        {!hideMediaButtons && (
+          <button
+            className="attach-btn"
+            onClick={handleAttachClick}
+            disabled={isStreaming}
+            aria-label="Attach images"
+            title="Attach images"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66L9.41 17.4a2 2 0 0 1-2.82-2.82l8.49-8.48" />
+            </svg>
+          </button>
+        )}
         <textarea
           ref={textareaRef}
           value={message}
@@ -611,25 +681,27 @@ export function InputArea() {
           rows={1}
           aria-label="Message input"
         />
-        <button
-          className={`voice-btn${isListening ? ' listening' : ''}`}
-          onClick={handleVoiceInput}
-          disabled={!voiceSupported || isStreaming}
-          aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
-          title={isListening ? 'Stop voice input' : 'Voice input'}
-        >
-          {isListening ? (
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12" rx="2" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" />
-              <path d="M19 11a7 7 0 0 1-14 0" />
-              <path d="M12 18v3" />
-            </svg>
-          )}
-        </button>
+        {!hideMediaButtons && (
+          <button
+            className={`voice-btn${isListening ? ' listening' : ''}`}
+            onClick={handleVoiceInput}
+            disabled={!voiceSupported || isStreaming}
+            aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+            title={isListening ? 'Stop voice input' : 'Voice input'}
+          >
+            {isListening ? (
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" />
+                <path d="M19 11a7 7 0 0 1-14 0" />
+                <path d="M12 18v3" />
+              </svg>
+            )}
+          </button>
+        )}
         {isStreaming ? (
           <button
             className="send-btn stop-btn"

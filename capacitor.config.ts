@@ -26,13 +26,19 @@ const config: CapacitorConfig = {
     },
     StatusBar: {
       style: 'DARK'
+    },
+    SpeechRecognition: {
+      language: 'en-US'
     }
   },
   ios: {
     contentInset: 'never',
     backgroundColor: '#06080a',
     scheme: 'ClawControl',
-    preferredContentMode: 'mobile'
+    preferredContentMode: 'mobile',
+    // Required Info.plist entries for speech recognition:
+    // NSSpeechRecognitionUsageDescription: "ClawControl uses speech recognition for voice input."
+    // NSMicrophoneUsageDescription: "ClawControl needs microphone access for voice input."
   },
   android: {
     backgroundColor: '#06080a',
