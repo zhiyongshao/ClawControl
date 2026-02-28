@@ -2396,6 +2396,9 @@ export const useStore = create<AppState>()(
             attachments: attachments.map(({ previewUrl: _previewUrl, ...attachment }) => attachment)
           })
 
+          // Track message for in-app review prompt (mobile only, fire-and-forget)
+          Platform.trackMessageAndMaybeRequestReview()
+
           // Start response watchdog: if no streaming event arrives within the
           // timeout, the connection is stale. Force-reconnect and retry once.
           {

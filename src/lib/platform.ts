@@ -10,6 +10,7 @@ import { Keyboard } from '@capacitor/keyboard'
 import { App } from '@capacitor/app'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { Haptics, ImpactStyle } from '@capacitor/haptics'
+import { AppReview } from '@capawesome/capacitor-app-review'
 
 // NOTE: iOS WKWebView doesn't provide CommonJS `require`, so this must be an ESM import.
 // Used on both iOS and Android via createWebSocketFactory().
@@ -494,6 +495,64 @@ export async function clawhubInstall(slug: string, targetDir: string): Promise<s
   }
 
   throw new Error('Skill install is only supported in the desktop app')
+}
+
+// In-app review (Android/iOS only)
+const REVIEW_PREFS_KEY = 'clawcontrol-review-state'
+
+interface ReviewState {
+  messagesSent: number
+  lastPromptedAt: number | null
+  prompted: boolean
+}
+
+async function getReviewState(): Promise<ReviewState> {
+  if (!isNativeMobile()) return { messagesSent: 0, lastPromptedAt: null, prompted: false }
+  try {
+    const result = await Preferences.get({ key: REVIEW_PREFS_KEY })
+    if (result.value) return JSON.parse(result.value)
+  } catch { /* ignore */ }
+  return { messagesSent: 0, lastPromptedAt: null, prompted: false }
+}
+
+async function saveReviewState(state: ReviewState): Promise<void> {
+  if (!isNativeMobile()) return
+  await Preferences.set({ key: REVIEW_PREFS_KEY, value: JSON.stringify(state) })
+}
+
+/**
+ * Track a message sent and potentially prompt for review.
+ * Uses Google Play In-App Review API (Android) / SKStoreReviewController (iOS).
+ * Triggers after 5 messages, then no more than once every 30 days.
+ */
+export async function trackMessageAndMaybeRequestReview(): Promise<void> {
+  if (!isNativeMobile()) return
+
+  try {
+    const state = await getReviewState()
+    state.messagesSent++
+
+    // Don't prompt too early — wait for 5 messages minimum
+    if (state.messagesSent < 5) {
+      await saveReviewState(state)
+      return
+    }
+
+    // Don't re-prompt within 30 days
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000
+    if (state.lastPromptedAt && Date.now() - state.lastPromptedAt < thirtyDays) {
+      await saveReviewState(state)
+      return
+    }
+
+    // Request review — the OS decides whether to actually show the dialog
+    await AppReview.requestReview()
+    state.lastPromptedAt = Date.now()
+    state.prompted = true
+    await saveReviewState(state)
+  } catch {
+    // Review not available — silently ignore
+  }
 }
 
 // App visibility tracking

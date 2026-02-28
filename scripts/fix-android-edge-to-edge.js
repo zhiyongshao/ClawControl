@@ -55,6 +55,31 @@ public class MainActivity extends BridgeActivity {
   return true;
 }
 
+// Android versionCode — bump this when publishing a new release to the Play Store
+const ANDROID_VERSION_CODE = 7;
+
+function fixVersionCode() {
+  const filePath = path.join(ANDROID_APP, 'build.gradle');
+
+  if (!fs.existsSync(filePath)) {
+    console.warn('!  build.gradle not found, skipping version patch');
+    return false;
+  }
+
+  let content = fs.readFileSync(filePath, 'utf8');
+  const pkg = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'));
+
+  // Patch versionCode
+  content = content.replace(/versionCode \d+/, `versionCode ${ANDROID_VERSION_CODE}`);
+
+  // Patch versionName to match package.json
+  content = content.replace(/versionName "[^"]*"/, `versionName "${pkg.version}"`);
+
+  fs.writeFileSync(filePath, content);
+  console.log(`+  build.gradle patched: versionCode=${ANDROID_VERSION_CODE}, versionName="${pkg.version}"`);
+  return true;
+}
+
 function fixBuildGradle() {
   const filePath = path.join(ANDROID_APP, 'build.gradle');
 
@@ -129,7 +154,7 @@ if (!fs.existsSync(path.join(PROJECT_ROOT, 'android', 'app'))) {
   process.exit(0);
 }
 
-const results = [fixMainActivity(), fixBuildGradle(), fixStyles()];
+const results = [fixMainActivity(), fixVersionCode(), fixBuildGradle(), fixStyles()];
 
 if (results.every(Boolean)) {
   console.log('done  Android edge-to-edge patches applied');

@@ -42,6 +42,7 @@
     "@capacitor/preferences": "^8.0.0",
     "@capacitor/splash-screen": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
+    "@capawesome/capacitor-app-review": "^8.0.1",
     "capacitor-native-websocket": "file:plugins/capacitor-native-websocket",
     "date-fns": "^3.3.1",
     "dompurify": "^3.3.1",
