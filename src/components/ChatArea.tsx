@@ -626,7 +626,19 @@ function MessageContent({ content, images, audioUrl }: { content: string; images
       )}
       {audioUrl && (
         <div className="message-audio">
-          <audio controls preload="metadata" src={audioUrl}>
+          <audio
+            controls
+            preload="metadata"
+            src={audioUrl}
+            onError={(e) => {
+              const audio = e.currentTarget
+              const wrapper = audio.parentElement
+              if (wrapper) {
+                wrapper.classList.add('message-audio--expired')
+                wrapper.innerHTML = '<span class="audio-expired">Voice message expired</span>'
+              }
+            }}
+          >
             <a href={audioUrl} target="_blank" rel="noopener">Download audio</a>
           </audio>
         </div>

@@ -738,9 +738,14 @@ export class OpenClawClient {
               : (typeof payload.delta === 'string' ? stripAnsi(payload.delta) : '')
           )
 
-          // Strip MEDIA: lines from streaming text so they don't flash in the UI
-          if (rawText.includes('MEDIA:')) {
-            rawText = rawText.split('\n').filter(l => !/\bMEDIA:\s/i.test(l)).join('\n').trim()
+          // Strip MEDIA: lines and trailing partial MEDIA tokens from streaming text
+          if (rawText.includes('MEDIA')) {
+            rawText = rawText
+              .split('\n')
+              .filter(l => !/\bMEDIA:\s*/i.test(l))
+              .join('\n')
+              .replace(/\s*\bMEDIA\s*$/, '')
+              .trim()
           }
 
           if (rawText && !isNoiseContent(rawText) && !isHeartbeatContent(rawText)) {
@@ -829,18 +834,30 @@ export class OpenClawClient {
           if (ss.source !== 'agent') return // Another stream type already claimed this session
 
           // Prefer canonical cumulative text when available.
-          const canonicalText = stripSystemNotifications(
+          let canonicalText = stripSystemNotifications(
             typeof payload.data?.text === 'string' ? stripAnsi(payload.data.text) : ''
           )
+          // Strip MEDIA: lines and trailing partial MEDIA tokens from streaming text
+          if (canonicalText.includes('MEDIA')) {
+            canonicalText = canonicalText
+              .split('\n')
+              .filter(l => !/\bMEDIA:\s*/i.test(l))
+              .join('\n')
+              .replace(/\s*\bMEDIA\s*$/, '') // strip trailing partial "MEDIA" before colon arrives
+              .trim()
+          }
           if (canonicalText && !isNoiseContent(canonicalText) && !isHeartbeatContent(canonicalText)) {
             const nextText = this.mergeIncoming(ss, canonicalText, 'cumulative')
             this.applyStreamText(ss, nextText, sk)
             return
           }
 
-          const deltaText = stripSystemNotifications(
+          let deltaText = stripSystemNotifications(
             typeof payload.data?.delta === 'string' ? stripAnsi(payload.data.delta) : ''
           )
+          if (deltaText.includes('MEDIA:')) {
+            deltaText = deltaText.split('\n').filter(l => !/\bMEDIA:\s*/i.test(l)).join('\n').trim()
+          }
           if (deltaText && !isNoiseContent(deltaText) && !isHeartbeatContent(deltaText)) {
             const nextText = this.mergeIncoming(ss, deltaText, 'delta')
             this.applyStreamText(ss, nextText, sk)

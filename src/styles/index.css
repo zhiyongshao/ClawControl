@@ -3682,14 +3682,34 @@ a {
 
 .message-audio {
   margin-top: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
 }
 
 .message-audio audio {
   width: 100%;
-  max-width: 360px;
-  height: 36px;
-  border-radius: var(--radius-md);
+  max-width: 400px;
+  height: 40px;
+  border-radius: var(--radius-sm);
   outline: none;
+  filter: contrast(0.9);
+}
+
+.message-audio audio::-webkit-media-controls-panel {
+  background: var(--bg-secondary);
+}
+
+.message-audio--expired {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-tertiary);
+}
+
+.audio-expired {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+  font-style: italic;
 }
 
 .empty-content {

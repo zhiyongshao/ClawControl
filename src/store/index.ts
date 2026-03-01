@@ -1711,14 +1711,18 @@ export const useStore = create<AppState>()(
             const resolvedKey = sessionKey || currentSessionId
             const isCurrentSession = !sessionKey || !currentSessionId || sessionKey === currentSessionId
 
-            // For non-current sessions, just clear streaming state
+            // For non-current sessions, clear streaming state.
+            // However, still process messages with media (audio/images) from subagent
+            // sessions — these are responses the user expects to see in the parent session.
             if (!isCurrentSession) {
               if (resolvedKey) {
                 set((state) => ({
                   streamingSessions: { ...state.streamingSessions, [resolvedKey]: false }
                 }))
               }
-              return
+              if (!msgPayload.audioUrl && (!msgPayload.images || msgPayload.images.length === 0)) {
+                return
+              }
             }
 
             const message: Message = {
