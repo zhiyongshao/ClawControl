@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, KeyboardEvent, ChangeEvent } from 'react'
+import { useState, useRef, useEffect, KeyboardEvent, ChangeEvent, CompositionEvent } from 'react'
 import { SpeechRecognition } from '@capacitor-community/speech-recognition'
 import { useStore, selectIsStreaming } from '../store'
 import { getPlatform, isNativeMobile } from '../lib/platform'
@@ -73,6 +73,8 @@ export function InputArea() {
   const electronSpeechAvailableRef = useRef(false)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const composingRef = useRef(false)
+  const textareaFocusedRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dictationBrowserRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
   const wakeBrowserRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
@@ -126,7 +128,8 @@ export function InputArea() {
     voiceSupportedRef.current &&
     connectedRef.current &&
     !isStreamingRef.current &&
-    !isListeningRef.current
+    !isListeningRef.current &&
+    !(isNativeMobile() && textareaFocusedRef.current)
 
   const scheduleWakeRestart = () => {
     clearWakeRestartTimer()
@@ -532,25 +535,71 @@ export function InputArea() {
   }, [message])
 
   const handleSubmit = async () => {
-    if (!message.trim() && attachedImages.length === 0) return
+    // Read from the DOM to catch any text still in the Android IME
+    // composition buffer that hasn't been committed to React state yet.
+    const currentMessage = textareaRef.current?.value || message
+    if (!currentMessage.trim() && attachedImages.length === 0) return
 
-    const currentMessage = message
+    composingRef.current = false
     const currentAttachments = attachedImages
     setMessage('')
+    if (textareaRef.current) textareaRef.current.value = ''
     setAttachedImages([])
     await sendMessage(currentMessage, currentAttachments)
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-      // Prevent sending during IME composition (CJK input)
-      if (e.nativeEvent.isComposing) return
+      if (e.nativeEvent.isComposing) {
+        // On Android, Enter during English swipe composition should still send.
+        // CJK IMEs use Enter to confirm characters, but for non-CJK the user
+        // expects Enter to submit. handleSubmit reads from the DOM to capture
+        // any in-flight composition text.
+        if (isNativeMobile()) {
+          e.preventDefault()
+          handleSubmit()
+        }
+        return
+      }
       e.preventDefault()
       handleSubmit()
     }
   }
 
+  const handleTextareaFocus = () => {
+    textareaFocusedRef.current = true
+    // Release the microphone so the keyboard's voice button can use it
+    if (isNativeMobile()) void stopWakeRecognition()
+  }
+
+  const handleTextareaBlur = () => {
+    textareaFocusedRef.current = false
+    // Clear stuck composition state (e.g. if compositionend never fired)
+    composingRef.current = false
+    // Debounce wake restart so tapping the voice button (blur then click)
+    // doesn't briefly start the wake listener before dictation stops it.
+    // stopWakeRecognition() cancels this timer if dictation starts first.
+    scheduleWakeRestart()
+  }
+
+  const handleCompositionStart = () => {
+    composingRef.current = true
+  }
+
+  const handleCompositionEnd = (e: CompositionEvent<HTMLTextAreaElement>) => {
+    composingRef.current = false
+    // Android IME: compositionend fires after onChange, so sync the final value now
+    const val = (e.target as HTMLTextAreaElement).value
+    if (val.length <= maxLength) {
+      setMessage(val)
+      if (voiceError) setVoiceError(null)
+    }
+  }
+
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    // Skip state update during IME composition to avoid fighting the keyboard buffer.
+    // The final value is synced in handleCompositionEnd instead.
+    if (composingRef.current) return
     if (e.target.value.length <= maxLength) {
       setMessage(e.target.value)
       if (voiceError) setVoiceError(null)
@@ -679,6 +728,10 @@ export function InputArea() {
           value={message}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onFocus={handleTextareaFocus}
+          onBlur={handleTextareaBlur}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
           placeholder="Type a message..."
           rows={1}
           aria-label="Message input"
