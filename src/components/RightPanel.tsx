@@ -44,7 +44,8 @@ export function RightPanel() {
     setClawHubSort,
     searchClawHubSkills,
     selectClawHubSkill,
-    selectedClawHubSkill
+    selectedClawHubSkill,
+    agents
   } = useStore()
 
   const resizing = useRef(false)
@@ -81,6 +82,7 @@ export function RightPanel() {
   }, [setRightPanelWidth])
 
   const [searchQuery, setSearchQuery] = useState('')
+  const [cronAgentFilter, setCronAgentFilter] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const filteredSkills = useMemo(() => skills.filter(
@@ -89,11 +91,12 @@ export function RightPanel() {
       skill.description.toLowerCase().includes(searchQuery.toLowerCase())
   ), [skills, searchQuery])
 
-  const filteredCronJobs = useMemo(() => cronJobs.filter(
-    (job) =>
-      job.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  const filteredCronJobs = useMemo(() => cronJobs.filter((job) => {
+    const matchesSearch = job.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       job.schedule.toLowerCase().includes(searchQuery.toLowerCase())
-  ), [cronJobs, searchQuery])
+    const matchesAgent = !cronAgentFilter || (job.agentId || '') === cronAgentFilter
+    return matchesSearch && matchesAgent
+  }), [cronJobs, searchQuery, cronAgentFilter])
 
   const filteredHooks = useMemo(() => hooks.filter(
     (hook) =>
@@ -289,6 +292,19 @@ export function RightPanel() {
               </svg>
               Create New Cron Job
             </button>
+          </div>
+          <div style={{ padding: '0 16px', marginBottom: '8px' }}>
+            <select
+              className="settings-select"
+              value={cronAgentFilter}
+              onChange={(e) => setCronAgentFilter(e.target.value)}
+              style={{ width: '100%' }}
+            >
+              <option value="">All Agents</option>
+              {agents.map(a => (
+                <option key={a.id} value={a.id}>{a.name || a.id}</option>
+              ))}
+            </select>
           </div>
           {filteredCronJobs.length > 0 ? (
             filteredCronJobs.map((job, index) => (
