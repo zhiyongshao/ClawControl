@@ -408,10 +408,26 @@ const responseWatchdogs = new Map<string, WatchdogEntry>()
  * `gateway.nodes.allowCommands`. Merges with existing allowed commands
  * so other nodes' commands aren't clobbered. Silently no-ops on failure.
  */
-async function syncNodePermissionsToServer(client: OpenClawClient, permissions: Record<string, boolean>): Promise<void> {
+async function syncNodePermissionsToServer(client: OpenClawClient, permissions: Record<string, boolean>, getConnected: () => boolean): Promise<void> {
   try {
     const enabledCommands = getCommands(permissions)
     if (enabledCommands.length === 0) return
+
+    // Node client often connects before the operator client is ready.
+    // Wait up to 5s for the operator connection to come online.
+    if (!getConnected()) {
+      await new Promise<void>((resolve) => {
+        let elapsed = 0
+        const interval = setInterval(() => {
+          elapsed += 250
+          if (getConnected() || elapsed >= 5000) {
+            clearInterval(interval)
+            resolve()
+          }
+        }, 250)
+      })
+      if (!getConnected()) return
+    }
 
     const { config, hash } = await client.getServerConfig()
     const existing: string[] = config?.gateway?.nodes?.allowCommands ?? []
@@ -657,7 +673,7 @@ export const useStore = create<AppState>()(
           set({ nodeConnected: true })
           Platform.startForegroundService()
           const opClient = get().client
-          if (opClient) syncNodePermissionsToServer(opClient, nodePermissions)
+          if (opClient) syncNodePermissionsToServer(opClient, nodePermissions, () => get().connected)
         })
         nodeClient.on('disconnected', () => {
           set({ nodeConnected: false })
@@ -2524,7 +2540,7 @@ export const useStore = create<AppState>()(
               }
               // Auto-sync enabled commands to server config
               const opClient = get().client
-              if (opClient) syncNodePermissionsToServer(opClient, get().nodePermissions)
+              if (opClient) syncNodePermissionsToServer(opClient, get().nodePermissions, () => get().connected)
             })
             nodeClient.on('disconnected', () => {
               set({ nodeConnected: false })
@@ -2568,7 +2584,7 @@ export const useStore = create<AppState>()(
                     }
                   }
                   const opClient = get().client
-                  if (opClient) syncNodePermissionsToServer(opClient, get().nodePermissions)
+                  if (opClient) syncNodePermissionsToServer(opClient, get().nodePermissions, () => get().connected)
                 })
                 retryClient.on('disconnected', () => {
                   set({ nodeConnected: false })
