@@ -1,7 +1,7 @@
 // OpenClaw Client - Chat API Methods
 
 import type { Message, RpcCaller } from './types'
-import { stripAnsi, stripSystemNotifications, stripConversationMetadata, extractImagesFromContent, parseMediaTokens } from './utils'
+import { stripAnsi, stripModelSpecialTokens, stripSystemNotifications, stripConversationMetadata, extractImagesFromContent, parseMediaTokens } from './utils'
 
 export interface HistoryToolCall {
   toolCallId: string
@@ -250,7 +250,7 @@ export async function getSessionMessages(call: RpcCaller, sessionId: string, gat
         return {
           id: msgId,
           role: normalizedRole,
-          content: stripAnsi(content),
+          content: stripModelSpecialTokens(stripAnsi(content)),
           thinking: thinking ? stripAnsi(thinking) : thinking,
           timestamp: new Date(msg.timestamp || m.timestamp || msg.ts || m.ts || msg.createdAt || m.createdAt || Date.now()).toISOString(),
           images: dedupedImages.length > 0 ? dedupedImages : undefined,

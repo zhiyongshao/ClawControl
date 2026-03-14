@@ -93,7 +93,21 @@ async function executeModel(
   if (!args) {
     const session = context.sessions.find(s => s.key === sessionKey)
     const model = session?.model || 'default'
-    return { content: `**Current model:** \`${model}\`` }
+    const lines = [`**Current model:** \`${model}\``]
+
+    // Fetch available models via models.list RPC
+    try {
+      const models = await client.listModels()
+      if (models.length > 0) {
+        const modelIds = models.map(m => m.id)
+        lines.push(
+          `**Available:** ${modelIds.slice(0, 10).map(m => `\`${m}\``).join(', ')}` +
+          (modelIds.length > 10 ? ` +${modelIds.length - 10} more` : '')
+        )
+      }
+    } catch { /* ignore */ }
+
+    return { content: lines.join('\n') }
   }
 
   try {

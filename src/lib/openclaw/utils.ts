@@ -1,5 +1,18 @@
 // OpenClaw Client - Utility Functions
 
+/**
+ * Strip model control tokens leaked into assistant text output (v2026.3.11).
+ * Models like GLM-5 and DeepSeek sometimes emit internal delimiter tokens
+ * (e.g. `<|assistant|>`, `<|tool_call_result_begin|>`, `<｜begin▁of▁sentence｜>`)
+ * in their responses. These should never reach end users.
+ */
+export function stripModelSpecialTokens(text: string): string {
+  if (!text) return text
+  // Match both ASCII pipe <|...|> and full-width pipe <｜...｜> (U+FF5C) variants.
+  const cleaned = text.replace(/<[|｜][^|｜]*[|｜]>/g, ' ').replace(/  +/g, ' ').trim()
+  return cleaned || text
+}
+
 // Strip ANSI escape sequences (colors, cursor movement, mode switches, OSC, etc.)
 // so terminal output from tool calls and streaming text renders cleanly in the UI.
 // Uses inline regexes to avoid lastIndex state issues with reused global RegExp objects.

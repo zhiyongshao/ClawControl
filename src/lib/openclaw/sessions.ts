@@ -91,6 +91,36 @@ export async function createSession(agentId?: string): Promise<Session> {
   }
 }
 
+export async function getSession(call: RpcCaller, sessionKey: string): Promise<Session | null> {
+  try {
+    const result = await call<any>('sessions.get', { key: sessionKey })
+    const s = result?.session || result
+    if (!s) return null
+    const key = s.key || s.id || sessionKey
+    return {
+      id: key,
+      key,
+      title: s.title || s.label || key || 'New Chat',
+      agentId: s.agentId || undefined,
+      createdAt: new Date(s.updatedAt || s.createdAt || Date.now()).toISOString(),
+      updatedAt: new Date(s.updatedAt || s.createdAt || Date.now()).toISOString(),
+      lastMessage: s.lastMessagePreview || s.lastMessage || undefined,
+      thinkingLevel: s.thinkingLevel || undefined,
+      fastMode: s.fastMode ?? undefined,
+      verboseLevel: s.verboseLevel || undefined,
+      reasoningLevel: s.reasoningLevel || undefined,
+      model: s.model || undefined,
+      modelProvider: s.modelProvider || undefined,
+      inputTokens: s.inputTokens ?? undefined,
+      outputTokens: s.outputTokens ?? undefined,
+      totalTokens: s.totalTokens ?? undefined,
+      contextTokens: s.contextTokens ?? undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function deleteSession(call: RpcCaller, sessionId: string): Promise<void> {
   await call('sessions.delete', { key: sessionId })
 }

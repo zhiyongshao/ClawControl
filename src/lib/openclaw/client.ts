@@ -9,7 +9,7 @@ import type { DeviceIdentity, DeviceConnectField } from '../device-identity'
 import { signChallenge } from '../device-identity'
 import { APP_NAME, APP_VERSION, OPENCLAW_CLIENT_ID, OPENCLAW_CLIENT_MODE } from '../appMeta'
 import { getPlatform } from '../platform'
-import { stripAnsi, extractToolResultText, extractTextFromContent, extractImagesFromContent, isHeartbeatContent, isNoiseContent, stripSystemNotifications, parseMediaTokens } from './utils'
+import { stripAnsi, stripModelSpecialTokens, extractToolResultText, extractTextFromContent, extractImagesFromContent, isHeartbeatContent, isNoiseContent, stripSystemNotifications, parseMediaTokens } from './utils'
 import * as sessionsApi from './sessions'
 import * as chatApi from './chat'
 import * as agentsApi from './agents'
@@ -64,6 +64,8 @@ export class OpenClawClient {
   private lastMessageAt = 0
   /** Server tick interval (from hello-ok policy), default 30s. */
   private tickIntervalMs = 30000
+  /** Server runtime version from hello-ok payload (v2026.3.11). */
+  public serverVersion: string | null = null
   /** Watchdog timer that detects missed server ticks (dead connection). */
   private tickWatchTimer: ReturnType<typeof setTimeout> | null = null
   /** Timestamp of the last received server tick event. */
@@ -529,6 +531,11 @@ export class OpenClawClient {
           if (typeof policyTick === 'number' && policyTick > 0) {
             this.tickIntervalMs = policyTick
           }
+          // Capture server version from hello-ok payload (v2026.3.11)
+          const version = resFrame.payload?.runtimeVersion || resFrame.payload?.version
+          if (typeof version === 'string') {
+            this.serverVersion = version
+          }
           this.startHealthCheck()
           this.resetTickWatch() // Start watching for server ticks
           this.emit('connected', resFrame.payload)
@@ -856,7 +863,7 @@ export class OpenClawClient {
 
           // Prefer canonical cumulative text when available.
           let canonicalText = stripSystemNotifications(
-            typeof payload.data?.text === 'string' ? stripAnsi(payload.data.text) : ''
+            typeof payload.data?.text === 'string' ? stripModelSpecialTokens(stripAnsi(payload.data.text)) : ''
           )
           // Strip MEDIA: lines and trailing partial MEDIA tokens from streaming text.
           // Preserve stripped MEDIA: lines for lifecycle-end extraction.
@@ -1054,6 +1061,10 @@ export class OpenClawClient {
     return sessionsApi.createSession(agentId)
   }
 
+  async getSession(sessionKey: string): Promise<Session | null> {
+    return sessionsApi.getSession(this._call.bind(this), sessionKey)
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     return sessionsApi.deleteSession(this._call.bind(this), sessionId)
   }
@@ -1087,6 +1098,22 @@ export class OpenClawClient {
 
   async abortChat(sessionId: string): Promise<void> {
     return chatApi.abortChat(this._call.bind(this), sessionId)
+  }
+
+  // Models
+  async listModels(): Promise<Array<{ id: string; name?: string; provider?: string }>> {
+    try {
+      const result = await this._call<any>('models.list', {})
+      const models = result?.models
+      if (!Array.isArray(models)) return []
+      return models.map((m: any) => ({
+        id: m.id || m.name || String(m),
+        name: m.name || m.id,
+        provider: m.provider || m.providerId || undefined
+      }))
+    } catch {
+      return []
+    }
   }
 
   // Agents

@@ -214,6 +214,8 @@ export class NodeClient {
         this.authenticated = true
         this.emit('connected', msg.payload)
         resolve?.()
+        // Drain any pending work queued while this node was disconnected (v2026.3.11)
+        this.drainPendingWork()
         return
       }
 
@@ -287,5 +289,22 @@ export class NodeClient {
 
   isConnected(): boolean {
     return this.authenticated && !!this.ws && this.ws.readyState === WebSocket.OPEN
+  }
+
+  /**
+   * Drain pending work queued by the server while this node was disconnected (v2026.3.11).
+   * Calls node.pending.pull to fetch any queued invoke requests and processes them.
+   */
+  private async drainPendingWork(): Promise<void> {
+    if (!this.ws || !this.authenticated) return
+    try {
+      const reqId = (++this.requestId).toString()
+      const pullFrame = { type: 'req', id: reqId, method: 'node.pending.pull', params: {} }
+      this.ws.send(JSON.stringify(pullFrame))
+      // Response handling is done via the normal message handler —
+      // the server will send invoke requests as events in response.
+    } catch {
+      // Best-effort — pending work drain is non-critical
+    }
   }
 }
