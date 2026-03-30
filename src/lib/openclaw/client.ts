@@ -711,6 +711,11 @@ export class OpenClawClient {
     }
 
     // New content block — accumulate rather than replace.
+    // But first, suppress if the new text is a repetition of existing content.
+    const probe = nextText.slice(0, Math.min(120, nextText.length))
+    if (probe.length >= 40 && previous.includes(probe)) {
+      return
+    }
     const separator = '\n\n'
     ss.text = ss.text + separator + nextText
     this.emit('streamChunk', { text: separator + nextText, sessionKey })
@@ -733,6 +738,26 @@ export class OpenClawClient {
         return previous.slice(0, ss.blockOffset) + incoming
       }
 
+      // Repetition guard: if the incoming text is already contained within
+      // the accumulated text, the server agent is stuck in a generative loop.
+      // Suppress the duplicate to prevent runaway text accumulation.
+      if (previous.length >= incoming.length && previous.includes(incoming)) {
+        return previous
+      }
+      // Also check if a significant prefix of the incoming text (first 120 chars)
+      // already appears in the accumulated text — catches partial-overlap loops.
+      const probe = incoming.slice(0, Math.min(120, incoming.length))
+      if (probe.length >= 40 && previous.includes(probe)) {
+        return previous
+      }
+
+      // Runaway text cap: if the accumulated text is excessively long,
+      // replace rather than append to prevent the UI from choking.
+      if (previous.length > 50_000) {
+        ss.blockOffset = 0
+        return incoming
+      }
+
       // New content block detected — accumulate rather than replace.
       const separator = '\n\n'
       ss.blockOffset = previous.length + separator.length
@@ -749,14 +774,26 @@ export class OpenClawClient {
       return previous
     }
 
+    // Repetition guard for delta mode: if the incoming delta is already
+    // contained in the accumulated text, suppress it.
+    if (previous && incoming.length >= 40 && previous.includes(incoming)) {
+      return previous
+    }
+
     // Fallback for partial overlap between chunk boundaries.
+    // Cap the search to avoid O(n²) on very long strings.
     if (previous) {
-      const maxOverlap = Math.min(previous.length, incoming.length)
+      const maxOverlap = Math.min(previous.length, incoming.length, 500)
       for (let i = maxOverlap; i > 0; i--) {
         if (previous.endsWith(incoming.slice(0, i))) {
           return previous + incoming.slice(i)
         }
       }
+    }
+
+    // Runaway cap for delta mode
+    if (previous && previous.length > 50_000) {
+      return incoming
     }
 
     return previous + incoming
