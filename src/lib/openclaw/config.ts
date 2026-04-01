@@ -17,9 +17,12 @@ export async function getServerConfig(call: RpcCaller): Promise<{ config: any; h
  * Patches the server config via config.patch.
  * Uses baseHash for optimistic conflict detection.
  * Note: config.patch triggers a server restart via SIGUSR1.
+ *
+ * Sends both `raw` (stringified JSON, for pre-3.28 servers) and `patch`
+ * (direct object, for v2026.3.28+). The server uses whichever it understands.
  */
 export async function patchServerConfig(call: RpcCaller, patch: object, baseHash: string): Promise<void> {
-  await call<any>('config.patch', { raw: JSON.stringify(patch), baseHash })
+  await call<any>('config.patch', { patch, raw: JSON.stringify(patch), baseHash })
 }
 
 /**

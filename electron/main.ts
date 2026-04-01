@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell, Menu, safeStorage, Notification, protocol, net, clipboard } from 'electron'
-import { join } from 'path'
+import { join, resolve, relative } from 'path'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs'
 import { spawn, ChildProcess } from 'child_process'
 import crypto from 'crypto'
@@ -195,7 +195,12 @@ app.whenReady().then(() => {
       const url = new URL(request.url)
       let filePath = decodeURIComponent(url.pathname)
       if (filePath === '/' || filePath === '') filePath = '/index.html'
-      const fullPath = join(distPath, filePath)
+      const fullPath = resolve(distPath, '.' + filePath)
+      // Prevent path traversal — resolved path must stay within distPath
+      const rel = relative(distPath, fullPath)
+      if (rel.startsWith('..') || resolve(distPath, rel) !== fullPath) {
+        return new Response('Not found', { status: 404 })
+      }
       const ext = '.' + filePath.split('.').pop()
       const data = readFileSync(fullPath)
       return new Response(data, {

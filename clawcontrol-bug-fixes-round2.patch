@@ -1,0 +1,160 @@
+diff --git a/electron/main.ts b/electron/main.ts
+index b4c907e..deb1fab 100644
+--- a/electron/main.ts
++++ b/electron/main.ts
+@@ -1,5 +1,5 @@
+ import { app, BrowserWindow, ipcMain, shell, Menu, safeStorage, Notification, protocol, net, clipboard } from 'electron'
+-import { join } from 'path'
++import { join, resolve, relative } from 'path'
+ import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs'
+ import { spawn, ChildProcess } from 'child_process'
+ import crypto from 'crypto'
+@@ -195,7 +195,12 @@ app.whenReady().then(() => {
+       const url = new URL(request.url)
+       let filePath = decodeURIComponent(url.pathname)
+       if (filePath === '/' || filePath === '') filePath = '/index.html'
+-      const fullPath = join(distPath, filePath)
++      const fullPath = resolve(distPath, '.' + filePath)
++      // Prevent path traversal — resolved path must stay within distPath
++      const rel = relative(distPath, fullPath)
++      if (rel.startsWith('..') || resolve(distPath, rel) !== fullPath) {
++        return new Response('Not found', { status: 404 })
++      }
+       const ext = '.' + filePath.split('.').pop()
+       const data = readFileSync(fullPath)
+       return new Response(data, {
+diff --git a/src/components/InputArea.tsx b/src/components/InputArea.tsx
+index 34786cf..42b5109 100644
+--- a/src/components/InputArea.tsx
++++ b/src/components/InputArea.tsx
+@@ -519,6 +519,11 @@ export function InputArea() {
+     } else {
+       void stopWakeRecognition()
+     }
++    // Cleanup: stop any wake recognition started by this effect cycle
++    // to prevent duplicate listeners when dependencies change rapidly
++    return () => {
++      void stopWakeRecognition()
++    }
+   }, [wakeEnabled, wakeTriggers, voiceSupported, connected, isStreaming, isListening])
+ 
+   useEffect(() => {
+diff --git a/src/components/SubagentViewer.tsx b/src/components/SubagentViewer.tsx
+index 8c3be57..c90bc44 100644
+--- a/src/components/SubagentViewer.tsx
++++ b/src/components/SubagentViewer.tsx
+@@ -139,8 +139,11 @@ export function SubagentViewer({
+ 
+     return () => {
+       disposed = true
+-      client.disconnect()
+-      clientRef.current = null
++      try {
++        client.disconnect()
++      } finally {
++        clientRef.current = null
++      }
+     }
+   }, [sessionKey, serverUrl, authToken, authMode])
+ 
+diff --git a/src/store/index.ts b/src/store/index.ts
+index 4e8bb82..be023e7 100644
+--- a/src/store/index.ts
++++ b/src/store/index.ts
+@@ -431,6 +431,10 @@ interface WatchdogEntry {
+   attachments: Array<{ type?: string; mimeType?: string; fileName?: string; content: string; previewUrl?: string }>
+   sessionId: string
+   retried: boolean
++  /** Captured at send time so retry uses correct agent even if user switches */
++  agentId?: string
++  thinking?: boolean
++  thinkingLevel?: string | null
+ }
+ const responseWatchdogs = new Map<string, WatchdogEntry>()
+ 
+@@ -2724,7 +2728,11 @@ export const useStore = create<AppState>()(
+               get().deviceName || undefined,
+               get().nodePermissions
+             )
++            // Capture generation so stale node client events (from a previous
++            // profile) are ignored if the user switches profiles mid-connect.
++            const nodeGeneration = thisGeneration
+             nodeClient.on('connected', (payload: unknown) => {
++              if (_connectGeneration !== nodeGeneration) return
+               set({ nodeConnected: true })
+               Platform.startForegroundService()
+               // Store the node's device token from hello-ok
+@@ -2740,10 +2748,12 @@ export const useStore = create<AppState>()(
+               if (opClient) syncNodePermissionsToServer(opClient, get().nodePermissions, () => get().connected)
+             })
+             nodeClient.on('disconnected', () => {
++              if (_connectGeneration !== nodeGeneration) return
+               set({ nodeConnected: false })
+               Platform.stopForegroundService()
+             })
+             nodeClient.on('pairingRequired', (payload: unknown) => {
++              if (_connectGeneration !== nodeGeneration) return
+               const { deviceId } = (payload || {}) as { deviceId?: string }
+               set({
+                 pairingStatus: 'pending',
+@@ -2772,6 +2782,7 @@ export const useStore = create<AppState>()(
+                   get().nodePermissions
+                 )
+                 retryClient.on('connected', (p: unknown) => {
++                  if (_connectGeneration !== nodeGeneration) return
+                   set({ nodeConnected: true })
+                   Platform.startForegroundService()
+                   if (serverHost && p && typeof p === 'object') {
+@@ -2784,10 +2795,12 @@ export const useStore = create<AppState>()(
+                   if (opClient) syncNodePermissionsToServer(opClient, get().nodePermissions, () => get().connected)
+                 })
+                 retryClient.on('disconnected', () => {
++                  if (_connectGeneration !== nodeGeneration) return
+                   set({ nodeConnected: false })
+                   Platform.stopForegroundService()
+                 })
+                 retryClient.on('pairingRequired', (p: unknown) => {
++                  if (_connectGeneration !== nodeGeneration) return
+                   const { deviceId } = (p || {}) as { deviceId?: string }
+                   set({ pairingStatus: 'pending', pairingDeviceId: deviceId || null, showSettings: true })
+                 })
+@@ -2984,6 +2997,10 @@ export const useStore = create<AppState>()(
+               // This is the retried send — don't set up another watchdog
+             } else {
+               const watchdogSessionId = sessionId!
++              // Capture send-time state for retry so we don't use stale UI state
++              const watchdogAgentId = currentAgentId || undefined
++              const watchdogThinking = thinkingEnabled
++              const watchdogThinkingLevel = sessionThinkingLevel
+               const timer = setTimeout(async () => {
+                 const entry = responseWatchdogs.get(watchdogSessionId)
+                 if (!entry) return
+@@ -3012,14 +3029,14 @@ export const useStore = create<AppState>()(
+                   await get().connect()
+                   const retryClient = get().client
+                   if (retryClient) {
+-                    const { thinkingEnabled, currentAgentId, sessions: retrySessions } = get()
+-                    const retrySession = retrySessions.find(s => (s.key || s.id) === watchdogSessionId)
++                    // Use the captured agent/thinking from when the message was originally
++                    // sent, not the current UI state — user may have switched sessions.
+                     await retryClient.sendMessage({
+                       sessionId: watchdogSessionId,
+                       content: retryContent.trim(),
+-                      agentId: currentAgentId || undefined,
+-                      thinking: thinkingEnabled,
+-                      thinkingLevel: retrySession?.thinkingLevel || null,
++                      agentId: watchdogAgentId || undefined,
++                      thinking: watchdogThinking,
++                      thinkingLevel: watchdogThinkingLevel,
+                       attachments: retryAttachments.map(({ previewUrl: _, ...a }: any) => a)
+                     })
+                     // Re-enable streaming state for the retried session
+@@ -3039,7 +3056,7 @@ export const useStore = create<AppState>()(
+                   }))
+                 }
+               }, RESPONSE_WATCHDOG_MS)
+-              responseWatchdogs.set(watchdogSessionId, { timer, content, attachments, sessionId: watchdogSessionId, retried: false })
++              responseWatchdogs.set(watchdogSessionId, { timer, content, attachments, sessionId: watchdogSessionId, retried: false, agentId: watchdogAgentId, thinking: watchdogThinking, thinkingLevel: watchdogThinkingLevel })
+             }
+           }
+         } catch (err) {

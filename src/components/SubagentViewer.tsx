@@ -139,8 +139,11 @@ export function SubagentViewer({
 
     return () => {
       disposed = true
-      client.disconnect()
-      clientRef.current = null
+      try {
+        client.disconnect()
+      } finally {
+        clientRef.current = null
+      }
     }
   }, [sessionKey, serverUrl, authToken, authMode])
 

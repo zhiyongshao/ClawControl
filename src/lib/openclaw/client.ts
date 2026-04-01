@@ -469,7 +469,7 @@ export class OpenClawClient {
           platform: getPlatform(),
           mode: OPENCLAW_CLIENT_MODE
         },
-        caps: ['tool-events', 'thinking-events'],
+        caps: ['tool-events', 'thinking-events', 'plugin-approvals'],
         auth: this.token
           ? (this.authMode === 'password' ? { password: this.token } : { token: this.token })
           : undefined,
@@ -1290,6 +1290,7 @@ export class OpenClawClient {
     content: string
     agentId?: string
     thinking?: boolean
+    thinkingLevel?: string | null
     attachments?: chatApi.ChatAttachmentInput[]
   }): Promise<{ sessionKey?: string }> {
     return chatApi.sendMessage(this._call.bind(this), params)

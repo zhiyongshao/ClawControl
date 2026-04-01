@@ -330,6 +330,7 @@ export async function sendMessage(call: RpcCaller, params: {
   content: string
   agentId?: string
   thinking?: boolean
+  thinkingLevel?: string | null
   attachments?: ChatAttachmentInput[]
 }): Promise<{ sessionKey?: string }> {
   const idempotencyKey = generateUUID()
@@ -341,7 +342,9 @@ export async function sendMessage(call: RpcCaller, params: {
   payload.sessionKey = params.sessionId || (params.agentId ? `agent:${params.agentId}:main` : 'agent:main:main')
 
   if (params.thinking) {
-    payload.thinking = 'low'
+    // Use session-level thinking level if set, otherwise default to 'low'
+    const level = params.thinkingLevel || 'low'
+    payload.thinking = level
   }
   if (params.attachments && params.attachments.length > 0) {
     payload.attachments = params.attachments

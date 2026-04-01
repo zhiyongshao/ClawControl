@@ -84,6 +84,12 @@ export interface ExecApprovalRequest {
   cwd?: string
   agent?: string
   sessionKey?: string
+  /** Distinguishes plugin-triggered approvals from exec approvals (v2026.3.28) */
+  source?: 'exec' | 'plugin'
+  /** The hook that triggered the approval request (v2026.3.28 plugin approvals) */
+  hookId?: string
+  /** The tool name that triggered the approval (v2026.3.28 plugin approvals) */
+  toolName?: string
   receivedAt: number
   raw: unknown
 }
@@ -425,6 +431,10 @@ interface WatchdogEntry {
   attachments: Array<{ type?: string; mimeType?: string; fileName?: string; content: string; previewUrl?: string }>
   sessionId: string
   retried: boolean
+  /** Captured at send time so retry uses correct agent even if user switches */
+  agentId?: string
+  thinking?: boolean
+  thinkingLevel?: string | null
 }
 const responseWatchdogs = new Map<string, WatchdogEntry>()
 
@@ -2656,7 +2666,8 @@ export const useStore = create<AppState>()(
           client.on('execApprovalRequested', (payload: unknown) => {
             const data = (payload as any)?.data || payload
             const approvalId = data?.id || data?.approvalId || data?.requestId || `approval-${Date.now()}`
-            const command = data?.command || data?.tool || 'Unknown command'
+            const command = data?.command || data?.tool || data?.toolName || 'Unknown command'
+            const source = data?.source === 'plugin' ? 'plugin' as const : 'exec' as const
             const approval: ExecApprovalRequest = {
               id: approvalId,
               command: typeof command === 'string' ? command : String(command),
@@ -2664,6 +2675,9 @@ export const useStore = create<AppState>()(
               cwd: typeof data?.cwd === 'string' ? data.cwd : undefined,
               agent: typeof data?.agent === 'string' ? data.agent : undefined,
               sessionKey: typeof data?.sessionKey === 'string' ? data.sessionKey : undefined,
+              source,
+              hookId: typeof data?.hookId === 'string' ? data.hookId : undefined,
+              toolName: typeof data?.toolName === 'string' ? data.toolName : undefined,
               receivedAt: Date.now(),
               raw: payload
             }
@@ -2714,7 +2728,11 @@ export const useStore = create<AppState>()(
               get().deviceName || undefined,
               get().nodePermissions
             )
+            // Capture generation so stale node client events (from a previous
+            // profile) are ignored if the user switches profiles mid-connect.
+            const nodeGeneration = thisGeneration
             nodeClient.on('connected', (payload: unknown) => {
+              if (_connectGeneration !== nodeGeneration) return
               set({ nodeConnected: true })
               Platform.startForegroundService()
               // Store the node's device token from hello-ok
@@ -2730,10 +2748,12 @@ export const useStore = create<AppState>()(
               if (opClient) syncNodePermissionsToServer(opClient, get().nodePermissions, () => get().connected)
             })
             nodeClient.on('disconnected', () => {
+              if (_connectGeneration !== nodeGeneration) return
               set({ nodeConnected: false })
               Platform.stopForegroundService()
             })
             nodeClient.on('pairingRequired', (payload: unknown) => {
+              if (_connectGeneration !== nodeGeneration) return
               const { deviceId } = (payload || {}) as { deviceId?: string }
               set({
                 pairingStatus: 'pending',
@@ -2762,6 +2782,7 @@ export const useStore = create<AppState>()(
                   get().nodePermissions
                 )
                 retryClient.on('connected', (p: unknown) => {
+                  if (_connectGeneration !== nodeGeneration) return
                   set({ nodeConnected: true })
                   Platform.startForegroundService()
                   if (serverHost && p && typeof p === 'object') {
@@ -2774,10 +2795,12 @@ export const useStore = create<AppState>()(
                   if (opClient) syncNodePermissionsToServer(opClient, get().nodePermissions, () => get().connected)
                 })
                 retryClient.on('disconnected', () => {
+                  if (_connectGeneration !== nodeGeneration) return
                   set({ nodeConnected: false })
                   Platform.stopForegroundService()
                 })
                 retryClient.on('pairingRequired', (p: unknown) => {
+                  if (_connectGeneration !== nodeGeneration) return
                   const { deviceId } = (p || {}) as { deviceId?: string }
                   set({ pairingStatus: 'pending', pairingDeviceId: deviceId || null, showSettings: true })
                 })
@@ -2878,7 +2901,9 @@ export const useStore = create<AppState>()(
       },
 
       sendMessage: async (content: string, attachments = []) => {
-        const { client, currentSessionId, thinkingEnabled, currentAgentId } = get()
+        const { client, currentSessionId, thinkingEnabled, currentAgentId, sessions } = get()
+        const currentSession = sessions.find(s => (s.key || s.id) === currentSessionId)
+        const sessionThinkingLevel = currentSession?.thinkingLevel || null
         const trimmed = content.trim()
         if (!client || (!trimmed && attachments.length === 0)) return
 
@@ -2954,6 +2979,7 @@ export const useStore = create<AppState>()(
             content: trimmed,
             agentId: currentAgentId || undefined,
             thinking: thinkingEnabled,
+            thinkingLevel: sessionThinkingLevel,
             attachments: attachments.map(({ previewUrl: _previewUrl, ...attachment }) => attachment)
           })
 
@@ -2971,6 +2997,10 @@ export const useStore = create<AppState>()(
               // This is the retried send — don't set up another watchdog
             } else {
               const watchdogSessionId = sessionId!
+              // Capture send-time state for retry so we don't use stale UI state
+              const watchdogAgentId = currentAgentId || undefined
+              const watchdogThinking = thinkingEnabled
+              const watchdogThinkingLevel = sessionThinkingLevel
               const timer = setTimeout(async () => {
                 const entry = responseWatchdogs.get(watchdogSessionId)
                 if (!entry) return
@@ -2999,12 +3029,14 @@ export const useStore = create<AppState>()(
                   await get().connect()
                   const retryClient = get().client
                   if (retryClient) {
-                    const { thinkingEnabled, currentAgentId } = get()
+                    // Use the captured agent/thinking from when the message was originally
+                    // sent, not the current UI state — user may have switched sessions.
                     await retryClient.sendMessage({
                       sessionId: watchdogSessionId,
                       content: retryContent.trim(),
-                      agentId: currentAgentId || undefined,
-                      thinking: thinkingEnabled,
+                      agentId: watchdogAgentId || undefined,
+                      thinking: watchdogThinking,
+                      thinkingLevel: watchdogThinkingLevel,
                       attachments: retryAttachments.map(({ previewUrl: _, ...a }: any) => a)
                     })
                     // Re-enable streaming state for the retried session
@@ -3024,7 +3056,7 @@ export const useStore = create<AppState>()(
                   }))
                 }
               }, RESPONSE_WATCHDOG_MS)
-              responseWatchdogs.set(watchdogSessionId, { timer, content, attachments, sessionId: watchdogSessionId, retried: false })
+              responseWatchdogs.set(watchdogSessionId, { timer, content, attachments, sessionId: watchdogSessionId, retried: false, agentId: watchdogAgentId, thinking: watchdogThinking, thinkingLevel: watchdogThinkingLevel })
             }
           }
         } catch (err) {

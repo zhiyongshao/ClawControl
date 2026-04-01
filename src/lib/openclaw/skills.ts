@@ -11,7 +11,7 @@ export async function listSkills(call: RpcCaller): Promise<Skill[]> {
       name: String(s.name || 'Unnamed Skill'),
       description: String(s.description || ''),
       triggers: Array.isArray(s.triggers) ? s.triggers.map(String) : [],
-      enabled: !s.disabled,
+      enabled: typeof s.enabled === 'boolean' ? s.enabled : !s.disabled,
       emoji: s.emoji,
       homepage: s.homepage,
       source: s.source,

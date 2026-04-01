@@ -65,8 +65,9 @@ export function extractTextFromContent(content: unknown): string {
   if (typeof content === 'string') {
     text = content
   } else if (Array.isArray(content)) {
+    // Include text, input_text, and output_text blocks (output_text from xAI Responses API, v2026.3.28)
     text = content
-      .filter((c: any) => c.type === 'text')
+      .filter((c: any) => c.type === 'text' || c.type === 'input_text' || c.type === 'output_text')
       .map((c: any) => c.text)
       .join('')
   } else if (content && typeof content === 'object' && 'text' in content) {

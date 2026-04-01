@@ -474,7 +474,7 @@ function ExecApprovalBanner({
   approval,
   onResolve
 }: {
-  approval: { id: string; command?: string; args?: string[]; cwd?: string; agent?: string }
+  approval: { id: string; command?: string; args?: string[]; cwd?: string; agent?: string; source?: 'exec' | 'plugin'; hookId?: string; toolName?: string }
   onResolve: (approvalId: string, decision: ExecApprovalDecision) => Promise<void>
 }) {
   const [resolving, setResolving] = useState<ExecApprovalDecision | null>(null)
@@ -496,8 +496,9 @@ function ExecApprovalBanner({
           <line x1="12" y1="9" x2="12" y2="13" />
           <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
-        <span>Exec Approval Required</span>
-        {approval.agent && <span className="exec-approval-agent">{approval.agent}</span>}
+        <span>{approval.source === 'plugin' ? 'Plugin Approval Required' : 'Exec Approval Required'}</span>
+        {approval.hookId && <span className="exec-approval-agent">{approval.hookId}</span>}
+        {approval.agent && !approval.hookId && <span className="exec-approval-agent">{approval.agent}</span>}
       </div>
       <div className="exec-approval-command">
         <code>{displayCommand}</code>

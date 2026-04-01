@@ -519,6 +519,11 @@ export function InputArea() {
     } else {
       void stopWakeRecognition()
     }
+    // Cleanup: stop any wake recognition started by this effect cycle
+    // to prevent duplicate listeners when dependencies change rapidly
+    return () => {
+      void stopWakeRecognition()
+    }
   }, [wakeEnabled, wakeTriggers, voiceSupported, connected, isStreaming, isListening])
 
   useEffect(() => {
