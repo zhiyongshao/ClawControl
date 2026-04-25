@@ -1680,7 +1680,7 @@ a {
 .message-content {
   flex: 1;
   min-width: 0;
-  max-width: 80%;
+  max-width: 75%;
 }
 
 .message.user .message-content {
@@ -5333,6 +5333,11 @@ a.message-image-fallback:hover {
 }
 
 /* ===== Mobile App (Capacitor) ===== */
+
+/* On native mobile, no title bar offset (fullscreen) */
+body.capacitor-mobile {
+  --titlebar-offset: 0px;
+}
 
 /* Safe area insets for iOS notch/dynamic island and Android cutouts.
    Applied to individual edge elements rather than .app to prevent layout shift.
